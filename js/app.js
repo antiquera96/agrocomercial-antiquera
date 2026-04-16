@@ -349,7 +349,7 @@
       { id: 'papelera',    label: 'Papelera',           icon: '🗑️', badge: DB.getTrashCount() || 0 },
       { id: 'mensajes',    label: 'Mensajes',           icon: '✉️', badge: DB.getUnreadMessagesCount() || 0 },
       { id: 'clientes',    label: 'Clientes',           icon: '👥' },
-      { id: 'vendedores',  label: 'Vendedores',         icon: '🧑‍💼' },
+      { id: 'vendedores',  label: 'Usuarios internos',  icon: '🧑‍💼' },
       { id: 'sugerencias', label: 'Sugerencias',        icon: '💡', badge: DB.getUnreadSugerenciasCount() || 0 },
       { id: 'fiados',      label: 'Fiados',             icon: '💰' }
     ];
@@ -1159,48 +1159,64 @@
 
   function renderAdminVendedores() {
     const main = document.getElementById('main-content');
-    const vendedores = DB.getVendedores();
+    const usuarios = DB.getUsuariosInternos();
+    const session = DB.getSession();
     main.innerHTML = `
       <div class="page-header">
-        <h2>Vendedores</h2>
-        <button class="btn btn-primary" id="add-vendor">+ Crear vendedor</button>
+        <h2>Usuarios internos</h2>
+        <button class="btn btn-primary" id="add-vendor">+ Crear usuario</button>
       </div>
-      ${vendedores.length ? `
+      <p class="info-muted">Administradores y vendedores del sistema. Los administradores tienen acceso completo; los vendedores solo ven productos, pedidos y libro.</p>
+      ${usuarios.length ? `
         <table class="data-table">
-          <thead><tr><th>Usuario</th><th>Correo</th><th>Creado</th><th></th></tr></thead>
+          <thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Creado</th><th></th></tr></thead>
           <tbody>
-            ${vendedores.map(v => `
-              <tr>
-                <td>${escapeHtml(v.username || '-')}</td>
-                <td>${escapeHtml(v.email || '-')}</td>
-                <td>${fmtDate(v.createdAt)}</td>
-                <td style="text-align:right"><button class="btn btn-small btn-danger" data-del="${v.id}">Eliminar</button></td>
-              </tr>
-            `).join('')}
+            ${usuarios.map(v => {
+              const isSelf = session && session.uid === v.id;
+              const isAdmin = v.role === 'admin';
+              return `
+                <tr>
+                  <td>${escapeHtml(v.username || '-')}${isSelf ? ' <span class="role-badge self">tú</span>' : ''}</td>
+                  <td>${escapeHtml(v.email || '-')}</td>
+                  <td><span class="role-badge ${isAdmin ? 'admin' : 'vendedor'}">${isAdmin ? 'Administrador' : 'Vendedor'}</span></td>
+                  <td>${fmtDate(v.createdAt)}</td>
+                  <td style="text-align:right">
+                    ${isSelf
+                      ? '<span class="info-muted" style="font-size:12px">(cuenta activa)</span>'
+                      : `<button class="btn btn-small btn-danger" data-del="${v.id}">Eliminar</button>`}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
           </tbody>
         </table>
-      ` : '<div class="empty-state">No hay vendedores creados todavía.</div>'}
+      ` : '<div class="empty-state">No hay usuarios internos todavía.</div>'}
     `;
     document.getElementById('add-vendor').onclick = () => {
-      modal('Crear vendedor', `
-        <p class="info-muted">Se creará una cuenta de vendedor con Firebase Auth. Recuerda compartir estas credenciales con el vendedor.</p>
+      modal('Crear usuario interno', `
+        <p class="info-muted">Se creará una cuenta con Firebase Auth. Recuerda compartir estas credenciales con la persona.</p>
         <label>Nombre de usuario (para mostrar)</label>
         <input type="text" name="username" required autocomplete="off">
         <label>Correo</label>
         <input type="email" name="email" required autocomplete="off">
         <label>Clave (mínimo 6 caracteres)</label>
         <input type="password" name="password" required minlength="6" autocomplete="new-password">
+        <label>Rol</label>
+        <select name="role" required>
+          <option value="vendedor" selected>Vendedor (acceso limitado)</option>
+          <option value="admin">Administrador (acceso completo)</option>
+        </select>
       `, async (data) => {
-        await DB.addVendedor(data.email, data.password, data.username);
-        toast('Vendedor creado');
+        await DB.addUsuarioInterno(data.email, data.password, data.username, data.role);
+        toast(data.role === 'admin' ? 'Administrador creado' : 'Vendedor creado');
       }, 'Crear');
     };
     main.querySelectorAll('[data-del]').forEach(b => {
       b.onclick = async () => {
-        if (!confirm('¿Mover este vendedor a la papelera?\n\nPodrás restaurarlo desde la sección Papelera. El usuario de Firebase Auth seguirá existiendo hasta que lo borres desde la consola.')) return;
+        if (!confirm('¿Mover este usuario a la papelera?\n\nPodrás restaurarlo desde la sección Papelera. El usuario de Firebase Auth seguirá existiendo hasta que lo borres desde la consola.')) return;
         await runAsync(b, async () => {
           await DB.deleteVendedor(b.dataset.del);
-          toast('Vendedor movido a la papelera');
+          toast('Usuario movido a la papelera');
         }, 'Eliminando…');
       };
     });

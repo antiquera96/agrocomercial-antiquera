@@ -284,11 +284,21 @@
       return user;
     },
 
-    // ---------- Users (vendedores) ----------
+    // ---------- Users (vendedores y admins) ----------
     getUsers() { return _c.users.slice(); },
     getVendedores() { return _c.users.filter(u => u.role === 'vendedor'); },
-    async addVendedor(email, password, username) {
-      // Crear en una app secundaria para no desloguear al admin.
+    getUsuariosInternos() {
+      // Admins + vendedores, ordenados (admins primero).
+      return _c.users
+        .filter(u => u.role === 'admin' || u.role === 'vendedor')
+        .sort((a, b) => {
+          if (a.role !== b.role) return a.role === 'admin' ? -1 : 1;
+          return (toMs(b.createdAt) || 0) - (toMs(a.createdAt) || 0);
+        });
+    },
+    async addUsuarioInterno(email, password, username, role) {
+      // role: 'vendedor' | 'admin'. Crear en una app secundaria para no desloguear al admin.
+      const safeRole = role === 'admin' ? 'admin' : 'vendedor';
       const sec = getSecondaryApp();
       const secAuth = firebase.auth(sec);
       try {
@@ -298,19 +308,26 @@
           uid,
           email: email.trim(),
           username: (username || email.split('@')[0]).trim(),
-          role: 'vendedor',
+          role: safeRole,
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         await secAuth.signOut();
-        return { id: uid, email: email.trim(), username };
+        return { id: uid, email: email.trim(), username, role: safeRole };
       } catch (e) {
         try { await secAuth.signOut(); } catch (_) {}
         throw e;
       }
     },
+    // Compatibilidad con código antiguo.
+    async addVendedor(email, password, username) {
+      return this.addUsuarioInterno(email, password, username, 'vendedor');
+    },
     async deleteVendedor(id) {
       // Soft delete: pasa a users_trash. El usuario de Auth sigue existiendo hasta
       // que se borre desde la consola, pero el perfil puede recuperarse.
+      if (_session && _session.uid === id) {
+        throw new Error('No puedes eliminar tu propia cuenta mientras estás conectado.');
+      }
       await _softDelete('users', id);
     },
 

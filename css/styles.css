@@ -1031,6 +1031,7 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   }
   .sidebar-brand .brand-sub { display: none; }
   .sidebar-nav {
+    flex: 0 0 100%;           /* fuerza que baje a su propia fila */
     flex-direction: row;
     overflow-x: auto;
     flex-wrap: nowrap;

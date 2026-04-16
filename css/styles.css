@@ -1259,3 +1259,120 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   vertical-align: middle;
   animation: aa-spin .8s linear infinite;
 }
+
+/* ===== Papelera: pestañas y tarjetas por tipo ===== */
+.trash-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 18px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(100, 116, 139, .18);
+}
+.trash-tab {
+  position: relative;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.trash-tab:hover {
+  background: #e2e8f0;
+}
+.trash-tab.active {
+  background: var(--primary, #2e7d32);
+  color: #fff;
+  border-color: var(--primary, #2e7d32);
+}
+.trash-tab-count {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 7px;
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  background: rgba(220, 38, 38, .15);
+  color: #b91c1c;
+  border-radius: 999px;
+}
+.trash-tab.active .trash-tab-count {
+  background: rgba(255, 255, 255, .25);
+  color: #fff;
+}
+
+.trash-card {
+  background: #fff;
+  border: 1px solid rgba(100, 116, 139, .18);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.trash-card .order-card {
+  box-shadow: none;
+  padding: 0;
+  margin: 0 0 8px;
+  border: none;
+  background: transparent;
+}
+.trash-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.trash-thumb {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trash-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.trash-thumb .no-image {
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+}
+.trash-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.trash-title {
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+.trash-sub {
+  font-size: 13px;
+  color: #475569;
+  margin-bottom: 6px;
+}
+.trash-meta {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 6px;
+}
+.trash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(100, 116, 139, .2);
+}

@@ -133,6 +133,7 @@
   let adminSection = 'productos';
   let vendedorSection = 'productos';
   let clienteSection = 'productos';
+  let papeleraTab = 'orders';
   let cart = [];
 
   async function logout() {
@@ -141,6 +142,7 @@
     adminSection = 'productos';
     vendedorSection = 'productos';
     clienteSection = 'productos';
+    papeleraTab = 'orders';
     // render se disparará automáticamente por onAuthStateChanged
   }
 
@@ -403,10 +405,10 @@
       });
       grid.querySelectorAll('.product-delete').forEach(b => {
         b.onclick = async () => {
-          if (!confirm('¿Eliminar este producto?')) return;
+          if (!confirm('¿Mover este producto a la papelera?\n\nPodrás restaurarlo desde la sección Papelera.')) return;
           await runAsync(b, async () => {
             await DB.deleteProduct(b.dataset.id);
-            toast('Producto eliminado');
+            toast('Producto movido a la papelera');
           }, 'Eliminando…');
         };
       });
@@ -759,42 +761,196 @@
 
   function renderAdminPapelera() {
     const main = document.getElementById('main-content');
-    const trash = DB.getTrash();
+
+    const TRASH_TYPES = [
+      { key: 'orders',      label: 'Pedidos',     singular: 'pedido' },
+      { key: 'products',    label: 'Productos',   singular: 'producto' },
+      { key: 'libro',       label: 'Libro',       singular: 'entrada del libro' },
+      { key: 'messages',    label: 'Mensajes',    singular: 'mensaje' },
+      { key: 'sugerencias', label: 'Sugerencias', singular: 'sugerencia' },
+      { key: 'fiados',      label: 'Fiados',      singular: 'fiado' },
+      { key: 'users',       label: 'Vendedores',  singular: 'vendedor' }
+    ];
+
+    // Si la pestaña guardada no existe, vuelve a pedidos.
+    if (!TRASH_TYPES.find(t => t.key === papeleraTab)) papeleraTab = 'orders';
+
+    const activeType = TRASH_TYPES.find(t => t.key === papeleraTab);
+    const items = DB.getTrashByType(papeleraTab);
+    const totalCount = DB.getTrashCount();
+
+    const tabsHtml = TRASH_TYPES.map(t => {
+      const count = DB.getTrashCountByType(t.key);
+      const isActive = t.key === papeleraTab ? 'active' : '';
+      return `<button class="trash-tab ${isActive}" data-trash-tab="${t.key}">
+        ${escapeHtml(t.label)}${count ? ` <span class="trash-tab-count">${count}</span>` : ''}
+      </button>`;
+    }).join('');
+
     main.innerHTML = `
       <div class="page-header">
         <h2>Papelera de reciclaje</h2>
-        ${trash.length ? '<button class="btn btn-danger" id="empty-trash">Vaciar papelera</button>' : ''}
+        ${items.length ? `<button class="btn btn-danger" id="empty-trash-section">Vaciar ${escapeHtml(activeType.label).toLowerCase()}</button>` : ''}
       </div>
-      <p class="info-muted">Los pedidos eliminados se conservan aquí y pueden recuperarse.</p>
-      ${trash.length ? trash.map(o => orderRow(o, { trash: true })).join('') : '<div class="empty-state">La papelera está vacía.</div>'}
+      <p class="info-muted">
+        Nada se borra directamente: todo lo eliminado se conserva aquí y puede recuperarse.
+        ${totalCount ? `Hay <b>${totalCount}</b> elementos en total en la papelera.` : ''}
+      </p>
+      <div class="trash-tabs">${tabsHtml}</div>
+      <div id="trash-content">
+        ${items.length
+          ? items.map(it => trashItemCard(it, papeleraTab)).join('')
+          : `<div class="empty-state">No hay ${escapeHtml(activeType.label).toLowerCase()} en la papelera.</div>`}
+      </div>
     `;
-    const emptyBtn = document.getElementById('empty-trash');
+
+    // Cambio de pestaña
+    main.querySelectorAll('[data-trash-tab]').forEach(btn => {
+      btn.onclick = () => {
+        papeleraTab = btn.dataset.trashTab;
+        renderAdminPapelera();
+      };
+    });
+
+    // Vaciar sección actual
+    const emptyBtn = document.getElementById('empty-trash-section');
     if (emptyBtn) {
       emptyBtn.onclick = async () => {
-        if (!confirm('¿Vaciar completamente la papelera? Esta acción no se puede deshacer.')) return;
+        if (!confirm(`¿Vaciar completamente la sección "${activeType.label}"? Esta acción no se puede deshacer.`)) return;
         await runAsync(emptyBtn, async () => {
-          await DB.emptyTrash();
-          toast('Papelera vaciada');
+          await DB.emptyTrashOfType(papeleraTab);
+          toast('Sección vaciada');
         }, 'Vaciando…');
       };
     }
+
+    // Restaurar / eliminar definitivo
     main.querySelectorAll('[data-trash-action]').forEach(b => {
       b.onclick = async () => {
         const id = b.dataset.id;
+        const type = b.dataset.type;
+        const singular = (TRASH_TYPES.find(t => t.key === type) || { singular: 'elemento' }).singular;
         if (b.dataset.trashAction === 'restore') {
           await runAsync(b, async () => {
-            await DB.restoreOrder(id);
-            toast('Pedido restaurado');
+            await DB.restoreFromTrash(type, id);
+            toast(singular.charAt(0).toUpperCase() + singular.slice(1) + ' restaurado');
           }, 'Restaurando…');
         } else {
-          if (!confirm('¿Eliminar este pedido permanentemente? No se podrá recuperar.')) return;
+          if (!confirm(`¿Eliminar este ${singular} permanentemente? No se podrá recuperar.`)) return;
           await runAsync(b, async () => {
-            await DB.permanentDeleteOrder(id);
-            toast('Pedido eliminado definitivamente');
+            await DB.permanentDeleteFromTrash(type, id);
+            toast(singular.charAt(0).toUpperCase() + singular.slice(1) + ' eliminado definitivamente');
           }, 'Eliminando…');
         }
       };
     });
+  }
+
+  // Render para cada tipo en la papelera.
+  function trashItemCard(item, type) {
+    const actions = `
+      <div class="trash-actions">
+        <button class="btn btn-small btn-primary" data-trash-action="restore" data-type="${type}" data-id="${item.id}">Restaurar</button>
+        <button class="btn btn-small btn-danger" data-trash-action="delete" data-type="${type}" data-id="${item.id}">Eliminar definitivamente</button>
+      </div>
+    `;
+    const deletedMeta = `<div class="trash-meta">Eliminado: ${fmtDate(item.deletedAt)}</div>`;
+
+    if (type === 'orders' || type === 'libro') {
+      return `
+        <div class="trash-card">
+          ${orderRow(item, {})}
+          ${deletedMeta}
+          ${actions}
+        </div>
+      `;
+    }
+
+    if (type === 'products') {
+      const hasDiscount = item.precioDescuento && item.precioDescuento < item.precio;
+      return `
+        <div class="trash-card">
+          <div class="trash-row">
+            <div class="trash-thumb">
+              ${item.imagen ? `<img src="${escapeHtml(item.imagen)}" alt="">` : '<div class="no-image">Sin imagen</div>'}
+            </div>
+            <div class="trash-body">
+              <div class="trash-title">${escapeHtml(item.nombre || '(sin nombre)')}</div>
+              <div class="trash-sub">
+                ${hasDiscount
+                  ? `<span class="price-old">${fmtCLP(item.precio)}</span> <span class="price-new">${fmtCLP(item.precioDescuento)}</span>`
+                  : fmtCLP(item.precio)}
+              </div>
+              ${deletedMeta}
+            </div>
+          </div>
+          ${actions}
+        </div>
+      `;
+    }
+
+    if (type === 'messages' || type === 'sugerencias') {
+      return `
+        <div class="trash-card">
+          <div class="message-head">
+            <div>
+              <strong>${escapeHtml(item.fromName || '(sin autor)')}</strong>
+              ${item.fromRole ? `<span class="message-role">${escapeHtml(item.fromRole)}</span>` : ''}
+            </div>
+            <div class="message-date">${fmtDate(item.createdAt)}</div>
+          </div>
+          <div class="message-body">${escapeHtml(item.texto || '')}</div>
+          ${deletedMeta}
+          ${actions}
+        </div>
+      `;
+    }
+
+    if (type === 'fiados') {
+      return `
+        <div class="trash-card">
+          <div class="trash-row">
+            <div class="trash-body">
+              <div class="trash-title">${escapeHtml(item.nombre || '(sin nombre)')}</div>
+              <div class="trash-sub">
+                ${fmtCLP(item.monto)}
+                ${item.fechaFiado ? ` · Fiado: ${escapeHtml(fmtDateOnly(item.fechaFiado))}` : ''}
+                ${item.pagado ? ' · <span class="paid-badge">Pagado</span>' : ''}
+              </div>
+              ${item.notas ? `<div class="fiado-notes">${escapeHtml(item.notas)}</div>` : ''}
+              ${deletedMeta}
+            </div>
+          </div>
+          ${actions}
+        </div>
+      `;
+    }
+
+    if (type === 'users') {
+      return `
+        <div class="trash-card">
+          <div class="trash-row">
+            <div class="trash-body">
+              <div class="trash-title">${escapeHtml(item.username || item.email || '(sin nombre)')}</div>
+              <div class="trash-sub">${escapeHtml(item.email || '')} · ${escapeHtml(item.role || 'vendedor')}</div>
+              ${deletedMeta}
+            </div>
+          </div>
+          ${actions}
+        </div>
+      `;
+    }
+
+    // Fallback genérico
+    return `
+      <div class="trash-card">
+        <div class="trash-body">
+          <div class="trash-title">${escapeHtml(item.id)}</div>
+          ${deletedMeta}
+        </div>
+        ${actions}
+      </div>
+    `;
   }
 
   function renderAdminLibro() {
@@ -884,10 +1040,10 @@
       document.querySelectorAll('[data-libro-action]').forEach(b => {
         b.onclick = async () => {
           const id = b.dataset.id;
-          if (!confirm('¿Eliminar esta operación del libro de registro?')) return;
+          if (!confirm('¿Mover esta operación a la papelera?\n\nPodrás restaurarla desde la sección Papelera.')) return;
           await runAsync(b, async () => {
             await DB.deleteLibroEntry(id);
-            toast('Entrada eliminada');
+            toast('Entrada movida a la papelera');
           }, 'Eliminando…');
         };
       });
@@ -913,10 +1069,10 @@
             toast('Mensaje marcado como leído');
           }, 'Guardando…');
         } else if (b.dataset.msgAction === 'eliminar') {
-          if (!confirm('¿Eliminar mensaje?')) return;
+          if (!confirm('¿Mover este mensaje a la papelera?\n\nPodrás restaurarlo desde la sección Papelera.')) return;
           await runAsync(b, async () => {
             await DB.deleteMessage(id);
-            toast('Mensaje eliminado');
+            toast('Mensaje movido a la papelera');
           }, 'Eliminando…');
         }
       };
@@ -1041,10 +1197,10 @@
     };
     main.querySelectorAll('[data-del]').forEach(b => {
       b.onclick = async () => {
-        if (!confirm('¿Eliminar perfil de vendedor?\n\n(El usuario seguirá existiendo en Firebase Auth hasta que lo borres desde la consola.)')) return;
+        if (!confirm('¿Mover este vendedor a la papelera?\n\nPodrás restaurarlo desde la sección Papelera. El usuario de Firebase Auth seguirá existiendo hasta que lo borres desde la consola.')) return;
         await runAsync(b, async () => {
           await DB.deleteVendedor(b.dataset.del);
-          toast('Vendedor eliminado');
+          toast('Vendedor movido a la papelera');
         }, 'Eliminando…');
       };
     });
@@ -1084,10 +1240,10 @@
             toast('Sugerencia marcada como leída');
           }, 'Guardando…');
         } else if (b.dataset.sugAction === 'eliminar') {
-          if (!confirm('¿Eliminar esta sugerencia?')) return;
+          if (!confirm('¿Mover esta sugerencia a la papelera?\n\nPodrás restaurarla desde la sección Papelera.')) return;
           await runAsync(b, async () => {
             await DB.deleteSugerencia(id);
-            toast('Sugerencia eliminada');
+            toast('Sugerencia movida a la papelera');
           }, 'Eliminando…');
         }
       };
@@ -1132,10 +1288,10 @@
             toast('Fiado marcado como pagado');
           }, 'Guardando…');
         } else if (b.dataset.fAction === 'eliminar') {
-          if (!confirm('¿Eliminar registro?')) return;
+          if (!confirm('¿Mover este fiado a la papelera?\n\nPodrás restaurarlo desde la sección Papelera.')) return;
           await runAsync(b, async () => {
             await DB.deleteFiado(id);
-            toast('Registro eliminado');
+            toast('Fiado movido a la papelera');
           }, 'Eliminando…');
         }
       };

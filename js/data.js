@@ -3,8 +3,6 @@
 
   // =====================================================================
   // CONFIGURACIÓN FIREBASE
-  // Reemplaza los valores de PLACEHOLDER con la configuración real que
-  // obtendrás en la consola de Firebase (Project settings → Your apps → Web).
   // =====================================================================
   const FIREBASE_CONFIG = {
     apiKey: 'AIzaSyB6K_7P6djvlzxZ11fn0Eo_O62DRzOgpeg',
@@ -51,11 +49,18 @@
     clients: [],
     products: [],
     orders: [],
-    orders_trash: [],
     libro: [],
     messages: [],
     sugerencias: [],
-    fiados: []
+    fiados: [],
+    // Papeleras por tipo (soft delete universal)
+    orders_trash: [],
+    products_trash: [],
+    users_trash: [],
+    libro_trash: [],
+    messages_trash: [],
+    sugerencias_trash: [],
+    fiados_trash: []
   };
 
   let _session = null;     // { uid, email, role, name }
@@ -98,11 +103,18 @@
       listenCollection('users', _c.users, 'createdAt', 'desc');
       listenCollection('clients', _c.clients, 'createdAt', 'desc');
       listenCollection('orders', _c.orders, 'createdAt', 'desc');
-      listenCollection('orders_trash', _c.orders_trash, 'deletedAt', 'desc');
       listenCollection('libro', _c.libro, 'completedAt', 'desc');
       listenCollection('messages', _c.messages, 'createdAt', 'desc');
       listenCollection('sugerencias', _c.sugerencias, 'createdAt', 'desc');
       listenCollection('fiados', _c.fiados, 'createdAt', 'desc');
+      // Papeleras (solo admin)
+      listenCollection('orders_trash', _c.orders_trash, 'deletedAt', 'desc');
+      listenCollection('products_trash', _c.products_trash, 'deletedAt', 'desc');
+      listenCollection('users_trash', _c.users_trash, 'deletedAt', 'desc');
+      listenCollection('libro_trash', _c.libro_trash, 'deletedAt', 'desc');
+      listenCollection('messages_trash', _c.messages_trash, 'deletedAt', 'desc');
+      listenCollection('sugerencias_trash', _c.sugerencias_trash, 'deletedAt', 'desc');
+      listenCollection('fiados_trash', _c.fiados_trash, 'deletedAt', 'desc');
     } else if (role === 'vendedor') {
       listenCollection('orders', _c.orders, 'createdAt', 'desc');
       listenCollection('libro', _c.libro, 'completedAt', 'desc');
@@ -118,6 +130,50 @@
           triggerRender();
         }, err => console.error('[DB] orders(cliente) error', err));
       _unsubs.push(unsub);
+    }
+  }
+
+  // =====================================================================
+  // HELPERS SOFT DELETE
+  // Nada se borra nunca directo: todo pasa primero por <col>_trash.
+  // =====================================================================
+  async function _softDelete(col, id) {
+    const srcRef = fdb.collection(col).doc(id);
+    const snap = await srcRef.get();
+    if (!snap.exists) return;
+    const data = snap.data();
+    await fdb.collection(col + '_trash').doc(id).set({
+      ...data,
+      _originalCollection: col,
+      deletedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await srcRef.delete();
+  }
+
+  async function _restoreFromTrash(col, id) {
+    const ref = fdb.collection(col + '_trash').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return;
+    const raw = snap.data();
+    // Quitar campos internos de papelera antes de restaurar
+    delete raw.deletedAt;
+    delete raw._originalCollection;
+    await fdb.collection(col).doc(id).set(raw);
+    await ref.delete();
+  }
+
+  async function _permDelete(col, id) {
+    await fdb.collection(col + '_trash').doc(id).delete();
+  }
+
+  async function _emptyTrashOf(col, cacheList) {
+    // Procesa en lotes de 400 por seguridad (límite batch: 500).
+    const items = cacheList.slice();
+    while (items.length) {
+      const chunk = items.splice(0, 400);
+      const batch = fdb.batch();
+      chunk.forEach(o => batch.delete(fdb.collection(col + '_trash').doc(o.id)));
+      await batch.commit();
     }
   }
 
@@ -253,8 +309,9 @@
       }
     },
     async deleteVendedor(id) {
-      // Solo elimina el doc de perfil. El usuario de Auth debe borrarse desde consola.
-      await fdb.collection('users').doc(id).delete();
+      // Soft delete: pasa a users_trash. El usuario de Auth sigue existiendo hasta
+      // que se borre desde la consola, pero el perfil puede recuperarse.
+      await _softDelete('users', id);
     },
 
     // ---------- Clients ----------
@@ -291,7 +348,7 @@
       return { id, ...payload };
     },
     async deleteProduct(id) {
-      await fdb.collection('products').doc(id).delete();
+      await _softDelete('products', id);
     },
     // Subida de imagen a Storage y devuelve URL.
     async uploadProductImage(file) {
@@ -356,37 +413,7 @@
       }
     },
     async deleteOrder(id) {
-      const ref = fdb.collection('orders').doc(id);
-      const snap = await ref.get();
-      if (!snap.exists) return;
-      const data = snap.data();
-      await fdb.collection('orders_trash').doc(id).set({
-        ...data,
-        deletedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      await ref.delete();
-    },
-
-    // ---------- Orders Trash ----------
-    getTrash() {
-      return _c.orders_trash.slice().sort((a, b) => (toMs(b.deletedAt) || 0) - (toMs(a.deletedAt) || 0));
-    },
-    getTrashCount() { return _c.orders_trash.length; },
-    async restoreOrder(id) {
-      const ref = fdb.collection('orders_trash').doc(id);
-      const snap = await ref.get();
-      if (!snap.exists) return;
-      const { deletedAt, ...rest } = snap.data();
-      await fdb.collection('orders').doc(id).set(rest);
-      await ref.delete();
-    },
-    async permanentDeleteOrder(id) {
-      await fdb.collection('orders_trash').doc(id).delete();
-    },
-    async emptyTrash() {
-      const batch = fdb.batch();
-      _c.orders_trash.forEach(o => batch.delete(fdb.collection('orders_trash').doc(o.id)));
-      await batch.commit();
+      await _softDelete('orders', id);
     },
 
     // ---------- Libro ----------
@@ -395,7 +422,7 @@
     },
     getLibroCount() { return _c.libro.length; },
     async deleteLibroEntry(id) {
-      await fdb.collection('libro').doc(id).delete();
+      await _softDelete('libro', id);
     },
 
     // ---------- Messages ----------
@@ -421,7 +448,7 @@
       await fdb.collection('messages').doc(id).update({ leido: true });
     },
     async deleteMessage(id) {
-      await fdb.collection('messages').doc(id).delete();
+      await _softDelete('messages', id);
     },
 
     // ---------- Sugerencias ----------
@@ -446,7 +473,7 @@
       await fdb.collection('sugerencias').doc(id).update({ leido: true });
     },
     async deleteSugerencia(id) {
-      await fdb.collection('sugerencias').doc(id).delete();
+      await _softDelete('sugerencias', id);
     },
 
     // ---------- Fiados ----------
@@ -476,8 +503,59 @@
       });
     },
     async deleteFiado(id) {
-      await fdb.collection('fiados').doc(id).delete();
-    }
+      await _softDelete('fiados', id);
+    },
+
+    // =================================================================
+    // PAPELERA UNIVERSAL
+    // Cualquier cosa eliminada puede recuperarse desde aquí.
+    // =================================================================
+    getTrashByType(type) {
+      const list = _c[type + '_trash'];
+      if (!list) return [];
+      return list.slice().sort((a, b) => (toMs(b.deletedAt) || 0) - (toMs(a.deletedAt) || 0));
+    },
+    getTrashCountByType(type) {
+      const list = _c[type + '_trash'];
+      return list ? list.length : 0;
+    },
+    getTrashCount() {
+      // Total global (sumatoria de todas las papeleras).
+      return (
+        _c.orders_trash.length +
+        _c.products_trash.length +
+        _c.users_trash.length +
+        _c.libro_trash.length +
+        _c.messages_trash.length +
+        _c.sugerencias_trash.length +
+        _c.fiados_trash.length
+      );
+    },
+    // Compatibilidad: getTrash() = pedidos en papelera (API antigua).
+    getTrash() {
+      return this.getTrashByType('orders');
+    },
+    async restoreFromTrash(type, id) {
+      await _restoreFromTrash(type, id);
+    },
+    async permanentDeleteFromTrash(type, id) {
+      await _permDelete(type, id);
+    },
+    async emptyTrashOfType(type) {
+      const list = _c[type + '_trash'];
+      if (!list) return;
+      await _emptyTrashOf(type, list);
+    },
+    async emptyAllTrash() {
+      const types = ['orders', 'products', 'users', 'libro', 'messages', 'sugerencias', 'fiados'];
+      for (const t of types) {
+        await _emptyTrashOf(t, _c[t + '_trash']);
+      }
+    },
+    // --- Aliases antiguos (para que no rompa si algo viejo los llama) ---
+    async restoreOrder(id) { await _restoreFromTrash('orders', id); },
+    async permanentDeleteOrder(id) { await _permDelete('orders', id); },
+    async emptyTrash() { await _emptyTrashOf('orders', _c.orders_trash); }
   };
 
   // Utilidad: convierte Timestamp de Firestore (o number, o Date) a ms.

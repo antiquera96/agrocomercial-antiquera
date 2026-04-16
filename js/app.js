@@ -1119,22 +1119,24 @@
       const wrap = document.getElementById('clients-table-wrap');
       if (!filtered.length) { wrap.innerHTML = '<div class="empty-state">Sin clientes registrados.</div>'; return; }
       wrap.innerHTML = `
-        <table class="data-table">
-          <thead>
-            <tr><th>Nombre</th><th>Apellido</th><th>Teléfono</th><th>Correo</th><th>Registrado</th></tr>
-          </thead>
-          <tbody>
-            ${filtered.map(c => `
-              <tr>
-                <td>${escapeHtml(c.nombre)}</td>
-                <td>${escapeHtml(c.apellido)}</td>
-                <td>${escapeHtml(c.telefono)}</td>
-                <td>${escapeHtml(c.email)}</td>
-                <td>${fmtDate(c.createdAt)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr><th>Nombre</th><th>Apellido</th><th>Teléfono</th><th>Correo</th><th>Registrado</th></tr>
+            </thead>
+            <tbody>
+              ${filtered.map(c => `
+                <tr>
+                  <td>${escapeHtml(c.nombre)}</td>
+                  <td>${escapeHtml(c.apellido)}</td>
+                  <td>${escapeHtml(c.telefono)}</td>
+                  <td>${escapeHtml(c.email)}</td>
+                  <td>${fmtDate(c.createdAt)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
       `;
     };
     draw('');
@@ -1168,28 +1170,32 @@
       </div>
       <p class="info-muted">Administradores y vendedores del sistema. Los administradores tienen acceso completo; los vendedores solo ven productos, pedidos y libro.</p>
       ${usuarios.length ? `
-        <table class="data-table">
-          <thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Creado</th><th></th></tr></thead>
-          <tbody>
-            ${usuarios.map(v => {
-              const isSelf = session && session.uid === v.id;
-              const isAdmin = v.role === 'admin';
-              return `
-                <tr>
-                  <td>${escapeHtml(v.username || '-')}${isSelf ? ' <span class="role-badge self">tú</span>' : ''}</td>
-                  <td>${escapeHtml(v.email || '-')}</td>
-                  <td><span class="role-badge ${isAdmin ? 'admin' : 'vendedor'}">${isAdmin ? 'Administrador' : 'Vendedor'}</span></td>
-                  <td>${fmtDate(v.createdAt)}</td>
-                  <td style="text-align:right">
-                    ${isSelf
-                      ? '<span class="info-muted" style="font-size:12px">(cuenta activa)</span>'
-                      : `<button class="btn btn-small btn-danger" data-del="${v.id}">Eliminar</button>`}
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
+        <div class="users-internal-list">
+          ${usuarios.map(v => {
+            const isSelf = session && session.uid === v.id;
+            const isAdmin = v.role === 'admin';
+            return `
+              <div class="user-internal-card">
+                <div class="uic-main">
+                  <div class="uic-title">
+                    ${escapeHtml(v.username || '-')}
+                    ${isSelf ? ' <span class="role-badge self">tú</span>' : ''}
+                  </div>
+                  <div class="uic-email">${escapeHtml(v.email || '-')}</div>
+                  <div class="uic-meta">
+                    <span class="role-badge ${isAdmin ? 'admin' : 'vendedor'}">${isAdmin ? 'Administrador' : 'Vendedor'}</span>
+                    <span class="uic-date">${fmtDate(v.createdAt)}</span>
+                  </div>
+                </div>
+                <div class="uic-actions">
+                  ${isSelf
+                    ? '<span class="info-muted" style="font-size:12px">(cuenta activa)</span>'
+                    : `<button class="btn btn-small btn-danger" data-del="${v.id}">Eliminar</button>`}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
       ` : '<div class="empty-state">No hay usuarios internos todavía.</div>'}
     `;
     document.getElementById('add-vendor').onclick = () => {
